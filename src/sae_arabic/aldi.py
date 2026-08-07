@@ -134,13 +134,17 @@ def causal_scrub(
     seed: int = 0,
     device: str | None = None,
     seed_average: bool = False,
+    fwd_batch: int = 64,
+    max_length: int = 128,
 ) -> dict:
-    """MLM-head reconstruction causal validation.
+    """MLM-head reconstruction causal validation (memory-safe, batched).
 
     Returns ALDi scores per text for ``original`` texts, ``base`` masked
     reconstruction without intervention, and per-mode/per-feature dicts for
     ``ablate`` (zero the feature), ``amplify`` (scale by ``factor``), and
     ``control`` (ablate a random other feature).
+
+    Forward passes run in chunks of ``fwd_batch`` texts to avoid OOM.
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -152,7 +156,9 @@ def causal_scrub(
     sae.to(device)
     sae.eval()
 
-    encoding = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+    encoding = tokenizer(
+        texts, padding=True, truncation=True, max_length=max_length, return_tensors="pt"
+    )
     input_ids = encoding["input_ids"].to(device)
     attention_mask = encoding["attention_mask"].to(device)
 
@@ -165,46 +171,82 @@ def causal_scrub(
     mask_token_id = tokenizer.mask_token_id
     masked_ids = torch.where(mask_targets, mask_token_id, input_ids)
 
-    capture = _Capture()
-    handle = layer_module.register_forward_hook(capture)
-    with torch.no_grad():
-        model(input_ids=input_ids, attention_mask=attention_mask)
-    handle.remove()
-    hidden = capture.output
-
-    latents = torch.relu(sae.encoder(hidden))
-
-    def forward_with(hook_value) -> torch.Tensor:
-        h = layer_module.register_forward_hook(_replace_layer_hook(hook_value, capture.raw))
+    def _run_forward(ids, attn, hook_value=None):
+        if hook_value is not None:
+            h = layer_module.register_forward_hook(
+                _replace_layer_hook(hook_value, ids)
+            )
         with torch.no_grad():
-            logits = model(input_ids=masked_ids, attention_mask=attention_mask).logits
-        h.remove()
+            logits = model(input_ids=ids, attention_mask=attn).logits
+        if hook_value is not None:
+            h.remove()
         return logits
 
-    def substitute(logits: torch.Tensor) -> list[str]:
-        preds = logits.argmax(dim=-1)
-        sub_ids = torch.where(mask_targets, preds, input_ids)
-        return tokenizer.batch_decode(sub_ids, skip_special_tokens=True)
+    def _capture_hidden() -> tuple[torch.Tensor, list[torch.Tensor]]:
+        all_hidden, all_raw = [], []
+        for i in range(0, len(texts), fwd_batch):
+            handle = layer_module.register_forward_hook(
+                lambda m, a, o: None
+            )
+            hook = _Capture()
+            handle = layer_module.register_forward_hook(hook)
+            with torch.no_grad():
+                model(
+                    input_ids=input_ids[i : i + fwd_batch],
+                    attention_mask=attention_mask[i : i + fwd_batch],
+                )
+            handle.remove()
+            all_hidden.append(hook.output)
+            all_raw.append(hook.raw)
+        return torch.cat(all_hidden, dim=0), all_raw
+
+    def forward_with_batched(hook_values_list: list[torch.Tensor]) -> list[str]:
+        all_text = []
+        for i in range(0, len(texts), fwd_batch):
+            hv = hook_values_list[i]
+            h = layer_module.register_forward_hook(
+                _replace_layer_hook(hv, capture_raw[i])
+            )
+            with torch.no_grad():
+                logits = model(
+                    input_ids=masked_ids[i : i + fwd_batch],
+                    attention_mask=attention_mask[i : i + fwd_batch],
+                ).logits
+            h.remove()
+            preds = logits.argmax(dim=-1)
+            sub = torch.where(mask_targets[i : i + fwd_batch], preds, input_ids[i : i + fwd_batch])
+            all_text.extend(
+                tokenizer.batch_decode(sub, skip_special_tokens=True)
+            )
+        return all_text
+
+    hidden_all, capture_raw = _capture_hidden()
+    latents_all = torch.relu(sae.encoder(hidden_all))
 
     results: dict = {"original": aldi_score(texts, scorer), "base": None}
-    results["base"] = aldi_score(substitute(forward_with(hidden)), scorer)
+    base_texts = forward_with_batched(
+        {i: hidden_all[i : i + 1] for i in range(0, len(texts), 1)}
+    )
+    results["base"] = aldi_score(base_texts, scorer)
 
     rng = random.Random(seed)
     for mode in modes:
         results.setdefault(mode, {})
         for feature_id in feature_ids:
-            f_mod = latents.clone()
+            f_mod = latents_all.clone()
             if mode == "ablate":
                 f_mod[..., feature_id] = 0.0
             elif mode == "amplify":
                 f_mod[..., feature_id] = f_mod[..., feature_id] * factor
             elif mode == "control":
-                candidates = [f for f in range(latents.shape[-1]) if f != feature_id]
+                candidates = [f for f in range(latents_all.shape[-1]) if f != feature_id]
                 f_mod[..., rng.choice(candidates)] = 0.0
             else:
                 raise ValueError(f"unknown mode: {mode}")
             x_mod = sae.decoder(f_mod)
-            results[mode][feature_id] = aldi_score(substitute(forward_with(x_mod)), scorer)
+            mod_list = {i: x_mod[i : i + 1] for i in range(len(texts))}
+            result_texts = forward_with_batched(mod_list)
+            results[mode][feature_id] = aldi_score(result_texts, scorer)
     return results
 
 
