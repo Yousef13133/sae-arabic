@@ -18,7 +18,9 @@ pluggable and requires staged ALDi weights (Phase 0).
 | `sae_arabic/data.py` | Arabic preprocessing, tokenization, NADI/MADAR/local loading | 1 |
 | `sae_arabic/analysis.py` | Top-feature extraction and context browsing | 3 |
 | `sae_arabic/aldi.py` | ALDi scoring + causal MLM-head reconstruction validation | 3 |
+| `scripts/train_real.py` | Real-data entrypoint: dataset -> MARBERT activations -> SAE training | 1-2 |
 | `scripts/end_to_end_dry_run.py` | Offline wiring smoke test (tiny BERT) | 1-3 |
+| `notebooks/train_on_kaggle.ipynb` | Ready-to-upload Kaggle GPU notebook | 1-2 |
 
 ## Install
 
@@ -34,11 +36,14 @@ Offline dry run (no network, tiny random BERT):
 python -m scripts.end_to_end_dry_run
 ```
 
-Real pipeline (MARBERT + NADI/MADAR, 100-500 sentences) runs on Kaggle:
-1. `data.py` loads + normalizes the dataset.
-2. `activations.py` extracts MARBERT layer activations and writes shards.
-3. `sae.py` trains the SAE (`training_config.yaml`).
-4. `aldi.py` runs the causal MLM-head scrub once ALDi is staged.
+Real pipeline (MARBERT + dialect data, on a Kaggle GPU):
+1. Upload `notebooks/train_on_kaggle.ipynb` (needs `HF_TOKEN` + `GITHUB_TOKEN` secrets).
+2. `data.py` loads + normalizes the dataset.
+3. `activations.py` extracts MARBERT layer activations and writes shards.
+4. `sae.py` trains the SAE (`training_config.yaml`) and writes checkpoints + `report.json`.
+5. `aldi.py` runs the causal MLM-head scrub once ALDi is staged.
+
+Locally (small run): `python scripts/train_real.py --num-samples 100 --num-steps 1000`
 
 ## License
 

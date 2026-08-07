@@ -11,3 +11,15 @@ checkpoint_every: 1000
 max_grad_norm: 1.0
 wandb_project: "sae-arabic"
 seed: 42
+
+# Data (Phase 1)
+dataset_path: "Abdelrahman-Rezk/Arabic_Dialect_Identification"
+dataset_name: null
+text_column: "text"
+dialect_column: "label"
+split: "train"
+num_samples: 200
+max_length: 128
+
+# Outputs
+out_dir: "data/real_run"
