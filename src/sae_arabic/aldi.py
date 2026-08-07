@@ -40,21 +40,34 @@ def _preprocess_aldi(text: str) -> str:
 class AldiScorer:
     """Sentence-level ALDi dialectness scorer (AMR-KELEG/Sentence-ALDi).
 
-    0 = Modern Standard Arabic, 1 = highly dialectal.
+    0 = Modern Standard Arabic, 1 = highly dialectal. With ``seed_average``
+    enabled, the three published seeds (42/30/50) are averaged to reduce
+    prediction noise and improve calibration.
     """
+
+    DEFAULT_SEEDS = (
+        "AMR-KELEG/Sentence-ALDi",
+        "AMR-KELEG/Sentence-ALDi-30",
+        "AMR-KELEG/Sentence-ALDi-50",
+    )
 
     def __init__(
         self,
         model_name: str = "AMR-KELEG/Sentence-ALDi",
         device: str | None = None,
         batch_size: int = 32,
+        seed_average: bool = False,
     ):
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        names = self.DEFAULT_SEEDS if seed_average else (model_name,)
+        self.tokenizer = AutoTokenizer.from_pretrained(names[0])
+        self.models = [
+            AutoModelForSequenceClassification.from_pretrained(n) for n in names
+        ]
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(self.device).eval()
+        for m in self.models:
+            m.to(self.device).eval()
         self.batch_size = batch_size
 
     def __call__(self, texts: list[str]) -> list[float]:
@@ -68,21 +81,22 @@ class AldiScorer:
                     return_tensors="pt",
                 )
                 enc = {k: v.to(self.device) for k, v in enc.items()}
-                logits = self.model(**enc).logits[:, 0]
+                logits = torch.stack([m(**enc).logits[:, 0] for m in self.models]).mean(dim=0)
                 scores.extend(logits.cpu().tolist())
         return [_clamp_score(s) for s in scores]
 
 
-def aldi_score(texts: list[str], scorer=None, device: str = "cpu") -> list[float]:
+def aldi_score(texts: list[str], scorer=None, device: str = "cpu", seed_average: bool = False) -> list[float]:
     """Score dialectness of ``texts`` with ALDi, clamped to [0, 1].
 
     ``scorer`` must be callable with a list of texts and return a list of
     floats. If omitted, the public Sentence-ALDi model is loaded lazily
-    (override the model with the ``ALDI_MODEL`` env var).
+    (override the model with the ``ALDI_MODEL`` env var). Set ``seed_average=True``
+    to average across the three published seeds (42/30/50).
     """
     if scorer is None:
         model_name = os.environ.get("ALDI_MODEL", "AMR-KELEG/Sentence-ALDi")
-        scorer = AldiScorer(model_name=model_name, device=device)
+        scorer = AldiScorer(model_name=model_name, device=device, seed_average=seed_average)
     return [float(s) for s in scorer(texts)]
 
 
@@ -119,6 +133,7 @@ def causal_scrub(
     factor: float = 5.0,
     seed: int = 0,
     device: str | None = None,
+    seed_average: bool = False,
 ) -> dict:
     """MLM-head reconstruction causal validation.
 
@@ -129,6 +144,9 @@ def causal_scrub(
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
+    if scorer is None:
+        model_name = os.environ.get("ALDI_MODEL", "AMR-KELEG/Sentence-ALDi")
+        scorer = AldiScorer(model_name=model_name, device=device, seed_average=seed_average)
     model.to(device)
     model.eval()
     sae.to(device)
