@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from sae_arabic.aldi import aldi_score, causal_scrub, feature_aldicorrelation
+from sae_arabic.aldi import _clamp_score, aldi_score, causal_scrub, feature_aldicorrelation
 from sae_arabic.sae import SAEConfig, SparseAutoencoder
 from tests.helpers import StubTokenizer, tiny_bert
 
@@ -15,9 +15,10 @@ def _tiny_sae():
     return SparseAutoencoder(SAEConfig(d_model=32, dict_mult=4))
 
 
-def test_aldi_score_requires_scorer():
-    with pytest.raises(ValueError):
-        aldi_score(TEXTS)
+def test_clamp_score():
+    assert _clamp_score(-0.5) == 0.0
+    assert _clamp_score(1.5) == 1.0
+    assert _clamp_score(0.3) == 0.3
 
 
 def test_aldi_score_with_scorer():

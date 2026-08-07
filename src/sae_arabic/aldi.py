@@ -5,12 +5,14 @@ run a forward pass with the SAE feature ablated/amplified, substitute the
 top-1 predictions, and score the resulting text with ALDi. A correlational
 check (feature activation vs. original text ALDi) serves as fallback.
 
-ALDi scoring is pluggable: pass a ``scorer`` callable (``texts -> list[float]``)
-once the ALDi weights/scripts staged in Phase 0 are available.
+ALDi scoring uses the public ``AMR-KELEG/Sentence-ALDi`` model (a MARBERT
+regression head estimating the Arabic "Level of Dialectness" in [0, 1]),
+overridable via the ``ALDI_MODEL`` env var or by passing a custom scorer.
 """
 
 from __future__ import annotations
 
+import os
 import random
 
 import torch
@@ -19,17 +21,56 @@ from sae_arabic.activations import _resolve_layer
 from sae_arabic.sae import SparseAutoencoder
 
 
+def _clamp_score(value: float) -> float:
+    return min(max(0.0, float(value)), 1.0)
+
+
+class AldiScorer:
+    """Sentence-level ALDi dialectness scorer (AMR-KELEG/Sentence-ALDi).
+
+    0 = Modern Standard Arabic, 1 = highly dialectal.
+    """
+
+    def __init__(
+        self,
+        model_name: str = "AMR-KELEG/Sentence-ALDi",
+        device: str | None = None,
+        batch_size: int = 32,
+    ):
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device).eval()
+        self.batch_size = batch_size
+
+    def __call__(self, texts: list[str]) -> list[float]:
+        scores: list[float] = []
+        with torch.no_grad():
+            for start in range(0, len(texts), self.batch_size):
+                enc = self.tokenizer(
+                    texts[start : start + self.batch_size],
+                    padding=True,
+                    truncation=True,
+                    return_tensors="pt",
+                )
+                enc = {k: v.to(self.device) for k, v in enc.items()}
+                logits = self.model(**enc).logits[:, 0]
+                scores.extend(logits.cpu().tolist())
+        return [_clamp_score(s) for s in scores]
+
+
 def aldi_score(texts: list[str], scorer=None, device: str = "cpu") -> list[float]:
-    """Score dialectness of ``texts`` using the ALDi model.
+    """Score dialectness of ``texts`` with ALDi, clamped to [0, 1].
 
     ``scorer`` must be callable with a list of texts and return a list of
-    floats. If omitted, staging of the ALDi model (Phase 0) is required.
+    floats. If omitted, the public Sentence-ALDi model is loaded lazily
+    (override the model with the ``ALDI_MODEL`` env var).
     """
     if scorer is None:
-        raise ValueError(
-            "ALDi scoring requires staged ALDi weights/scripts (Phase 0). "
-            "Pass scorer=<callable: (list[str]) -> list[float]>."
-        )
+        model_name = os.environ.get("ALDI_MODEL", "AMR-KELEG/Sentence-ALDi")
+        scorer = AldiScorer(model_name=model_name, device=device)
     return [float(s) for s in scorer(texts)]
 
 
