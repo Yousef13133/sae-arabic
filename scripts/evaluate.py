@@ -94,7 +94,7 @@ def evaluate(
     var_total = (sum_x2 / n - mean**2).sum().item()
     mse_total = sum_mse.sum().item()
     freq = count_act / n
-    explained = 1.0 - mse_total / var_total if var_total > 0 else float("nan")
+    explained = 1.0 - (mse_total / n) / var_total if var_total > 0 else float("nan")
 
     return {
         "n_tokens": int(n),
