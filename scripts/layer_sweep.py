@@ -106,11 +106,6 @@ def main() -> None:
             f"l1/tok={metrics['l1_per_token']:.3f}"
         )
 
-    with torch.no_grad():
-        _, latents = sae(torch.from_numpy(flat[:512]))
-    top = top_features(latents[:100].numpy(), k=2)
-    print("sample top features (last layer):", list(top)[:4])
-
     best = max(results, key=lambda l: results[l]["explained_variance"])
     summary = {
         "layers": {str(k): v for k, v in results.items()},
@@ -119,6 +114,15 @@ def main() -> None:
     (out_dir / "sweep_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2))
     print(f"RECOMMENDED LAYER: {best}")
+
+    try:
+        device = next(sae.parameters()).device
+        with torch.no_grad():
+            latents = sae(torch.from_numpy(flat[:512]).to(device))[1]
+        top = top_features(latents[:100].cpu().numpy(), k=2)
+        print("sample top features (last layer):", list(top)[:4])
+    except Exception as exc:  # noqa: BLE001 - cosmetic step, never block the summary
+        print(f"top-features demo skipped: {exc}")
 
 
 if __name__ == "__main__":
