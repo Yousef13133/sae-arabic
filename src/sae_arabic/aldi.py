@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 
 import torch
 
@@ -23,6 +24,17 @@ from sae_arabic.sae import SparseAutoencoder
 
 def _clamp_score(value: float) -> float:
     return min(max(0.0, float(value)), 1.0)
+
+
+def _preprocess_aldi(text: str) -> str:
+    """Match the official ALDi preprocessing: strip URLs and Latin letters."""
+    no_urls = re.sub(
+        r"(https|http)?:\/\/(\w|\.|\/|\?|\=|\&|\%)*\b",
+        "",
+        text,
+        flags=re.MULTILINE,
+    )
+    return re.sub(r"[a-zA-Z]", "", no_urls)
 
 
 class AldiScorer:
@@ -50,7 +62,7 @@ class AldiScorer:
         with torch.no_grad():
             for start in range(0, len(texts), self.batch_size):
                 enc = self.tokenizer(
-                    texts[start : start + self.batch_size],
+                    [_preprocess_aldi(t) for t in texts[start : start + self.batch_size]],
                     padding=True,
                     truncation=True,
                     return_tensors="pt",
