@@ -19,6 +19,8 @@ pluggable and requires staged ALDi weights (Phase 0).
 | `sae_arabic/analysis.py` | Top-feature extraction and context browsing | 3 |
 | `sae_arabic/aldi.py` | ALDi scoring + causal MLM-head reconstruction validation | 3 |
 | `scripts/train_real.py` | Real-data entrypoint: dataset -> MARBERT activations -> SAE training | 1-2 |
+| `scripts/evaluate.py` | Evaluate a checkpoint: explained variance, dead rate, feature stats | 2-3 |
+| `scripts/layer_sweep.py` | Time-boxed layer selection (e.g., 4/6/8) ranked by explained variance | 2 |
 | `scripts/end_to_end_dry_run.py` | Offline wiring smoke test (tiny BERT) | 1-3 |
 | `notebooks/train_on_kaggle.ipynb` | Ready-to-upload Kaggle GPU notebook | 1-2 |
 
@@ -44,6 +46,10 @@ Real pipeline (MARBERT + dialect data, on a Kaggle GPU):
 5. `aldi.py` runs the causal MLM-head scrub once ALDi is staged.
 
 Locally (small run): `python scripts/train_real.py --num-samples 100 --num-steps 1000`
+
+Evaluate a checkpoint: `python scripts/evaluate.py --checkpoint data/real_run/checkpoints/final.pt --activations-dir data/real_run/activations`
+
+Pick the target layer: `python scripts/layer_sweep.py --layers 4 6 8 --num-samples 200 --num-steps 2000 --out-dir data/sweep`
 
 ## License
 
