@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Data / checkpoints
+data/
+checkpoints/
+*.npz
+*.pt
+
+# Secrets
+.env
+
+# Tooling
+.wandb/
+wandb/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# OS
+Thumbs.db
+.DS_Store

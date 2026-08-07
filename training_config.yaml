@@ -1,0 +1,13 @@
+# SAE training configuration (Phase 2, Week 5: lock optimal hyperparameters)
+model_name: "UBC-NLP/MARBERT"
+layer: 6
+batch_size: 32
+lr: 1.0e-4
+warmup_steps: 100
+l1_coeff: 1.0e-3
+dict_mult: 8
+num_steps: 10000
+checkpoint_every: 1000
+max_grad_norm: 1.0
+wandb_project: "sae-arabic"
+seed: 42
