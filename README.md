@@ -1,5 +1,7 @@
 # sae-arabic
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21848168.svg)](https://doi.org/10.5281/zenodo.21848168)
+
 Open-source toolkit for training and causally validating Sparse Autoencoder (SAE)
 features in Arabic LLMs, using dialectness (ALDi) as external ground truth.
 
