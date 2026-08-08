@@ -171,63 +171,47 @@ def causal_scrub(
     mask_token_id = tokenizer.mask_token_id
     masked_ids = torch.where(mask_targets, mask_token_id, input_ids)
 
-    def _run_forward(ids, attn, hook_value=None):
-        if hook_value is not None:
-            h = layer_module.register_forward_hook(
-                _replace_layer_hook(hook_value, ids)
-            )
-        with torch.no_grad():
-            logits = model(input_ids=ids, attention_mask=attn).logits
-        if hook_value is not None:
-            h.remove()
-        return logits
-
-    def _capture_hidden() -> tuple[torch.Tensor, list[torch.Tensor]]:
-        all_hidden, all_raw = [], []
-        for i in range(0, len(texts), fwd_batch):
-            handle = layer_module.register_forward_hook(
-                lambda m, a, o: None
-            )
+    def _capture_hidden() -> tuple[torch.Tensor, list[tuple]]:
+        """Run the model in chunks; return concatenated hidden + per-chunk raw outputs."""
+        hidden_chunks, raw_chunks = [], []
+        for start in range(0, len(texts), fwd_batch):
+            end = min(start + fwd_batch, len(texts))
             hook = _Capture()
             handle = layer_module.register_forward_hook(hook)
             with torch.no_grad():
                 model(
-                    input_ids=input_ids[i : i + fwd_batch],
-                    attention_mask=attention_mask[i : i + fwd_batch],
+                    input_ids=input_ids[start:end],
+                    attention_mask=attention_mask[start:end],
                 )
             handle.remove()
-            all_hidden.append(hook.output)
-            all_raw.append(hook.raw)
-        return torch.cat(all_hidden, dim=0), all_raw
+            hidden_chunks.append(hook.output)
+            raw_chunks.append(hook.raw)
+        return torch.cat(hidden_chunks, dim=0), raw_chunks
 
-    def forward_with_batched(hook_values_list: list[torch.Tensor]) -> list[str]:
-        all_text = []
-        for i in range(0, len(texts), fwd_batch):
-            hv = hook_values_list[i]
-            h = layer_module.register_forward_hook(
-                _replace_layer_hook(hv, capture_raw[i])
+    def _forward_with(hook_values: torch.Tensor) -> list[str]:
+        """Masked forward with replaced hidden, returning substituted texts."""
+        out_texts: list[str] = []
+        for chunk_idx, start in enumerate(range(0, len(texts), fwd_batch)):
+            end = min(start + fwd_batch, len(texts))
+            handle = layer_module.register_forward_hook(
+                _replace_layer_hook(hook_values[start:end], raw_chunks[chunk_idx])
             )
             with torch.no_grad():
                 logits = model(
-                    input_ids=masked_ids[i : i + fwd_batch],
-                    attention_mask=attention_mask[i : i + fwd_batch],
+                    input_ids=masked_ids[start:end],
+                    attention_mask=attention_mask[start:end],
                 ).logits
-            h.remove()
+            handle.remove()
             preds = logits.argmax(dim=-1)
-            sub = torch.where(mask_targets[i : i + fwd_batch], preds, input_ids[i : i + fwd_batch])
-            all_text.extend(
-                tokenizer.batch_decode(sub, skip_special_tokens=True)
-            )
-        return all_text
+            sub_ids = torch.where(mask_targets[start:end], preds, input_ids[start:end])
+            out_texts.extend(tokenizer.batch_decode(sub_ids, skip_special_tokens=True))
+        return out_texts
 
-    hidden_all, capture_raw = _capture_hidden()
+    hidden_all, raw_chunks = _capture_hidden()
     latents_all = torch.relu(sae.encoder(hidden_all))
 
     results: dict = {"original": aldi_score(texts, scorer), "base": None}
-    base_texts = forward_with_batched(
-        {i: hidden_all[i : i + 1] for i in range(0, len(texts), 1)}
-    )
-    results["base"] = aldi_score(base_texts, scorer)
+    results["base"] = aldi_score(_forward_with(hidden_all), scorer)
 
     rng = random.Random(seed)
     for mode in modes:
@@ -244,9 +228,7 @@ def causal_scrub(
             else:
                 raise ValueError(f"unknown mode: {mode}")
             x_mod = sae.decoder(f_mod)
-            mod_list = {i: x_mod[i : i + 1] for i in range(len(texts))}
-            result_texts = forward_with_batched(mod_list)
-            results[mode][feature_id] = aldi_score(result_texts, scorer)
+            results[mode][feature_id] = aldi_score(_forward_with(x_mod), scorer)
     return results
 
 
