@@ -75,7 +75,7 @@ Run causal validation: `python -m scripts.causal_validate --checkpoint data/swee
   author = {Yousef Al-Halabi},
   year = {2026},
   url = {https://github.com/Yousef13133/sae-arabic},
-  note = {DOI: 10.5281/zenodo.<ID>},
+  note = {DOI: 10.5281/zenodo.21848168},
 }
 ```
 
