@@ -1,6 +1,7 @@
 # sae-arabic
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21848168.svg)](https://doi.org/10.5281/zenodo.21848168)
+[![PyPI](https://img.shields.io/pypi/v/sae-arabic.svg)](https://pypi.org/project/sae-arabic/)
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Yousef13133/sae-arabic/blob/main/notebooks/train_on_colab.ipynb)
 
 Open-source toolkit for training and causally validating Sparse Autoencoder (SAE)
@@ -36,6 +37,14 @@ Final metrics — including the honest causal null result — are in
 ## Install
 
 ```bash
+pip install sae-arabic
+```
+
+For development (editable install + pytest + ruff):
+
+```bash
+git clone https://github.com/Yousef13133/sae-arabic.git
+cd sae-arabic
 pip install -e ".[dev]"
 ```
 
