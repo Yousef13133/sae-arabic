@@ -9,7 +9,7 @@ description = "Open-source toolkit for training and causally validating Sparse A
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Yousef" }]
+authors = [{ name = "Yousef Al-Halabi" }]
 keywords = ["sparse-autoencoder", "interpretability", "arabic", "sae", "llm"]
 classifiers = [
     "Programming Language :: Python :: 3",

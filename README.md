@@ -72,7 +72,7 @@ Run causal validation: `python -m scripts.causal_validate --checkpoint data/swee
 ```bibtex
 @software{sae_arabic,
   title = {sae-arabic: Sparse Autoencoder toolkit for Arabic LLM interpretability},
-  author = {Yousef},
+  author = {Yousef Al-Halabi},
   year = {2026},
   url = {https://github.com/Yousef13133/sae-arabic},
   note = {DOI: 10.5281/zenodo.<ID>},
